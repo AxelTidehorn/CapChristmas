@@ -3,6 +3,7 @@ so a reload (or a curious look at the network tab) cannot reveal the winner earl
 from .. import config as C
 from . import analysis_jobs as A
 from . import sessions as S
+from . import ai_jobs as V
 
 PHASES = [p for p, _ in C.SHOW_PHASES]
 DURATIONS = [d for _, d in C.SHOW_PHASES]
@@ -22,6 +23,10 @@ def _phase_at(elapsed: float) -> int:
 
 
 def _ready(m: dict) -> None:
+    if m.get("result_mode") == "ai":
+        V.assert_idle(m)
+        V.ready(m)
+        return
     if m["analysis"].get("status") != "completed":
         raise S.ApiError(409, "Ingen färdig analys att visa.")
     if S.analysis_stale(m):
@@ -75,6 +80,8 @@ def view(sid: str) -> dict:
         return out
     if out["mode"] != "show":
         return out
+    if S.analysis_stale(m):
+        return {**out, "mode": "standby"}
     r = A.load_results(sid)
     el = _elapsed(p, t)
     idx = _phase_at(el)
@@ -83,6 +90,30 @@ def view(sid: str) -> dict:
                phase_duration=DURATIONS[idx], n=r["n_included"], result_key=str(r["created_at"]))
     info = {d["id"]: _who(m["drawings"][d["id"]]) if d["id"] in m["drawings"] else {"id": d["id"]}
             for d in r["ranking"]}
+    if r.get("mode") == "ai":
+        out["result_mode"] = "ai"
+        out["reference_asset"] = r["reference_asset"]
+        if phase == "composite":
+            out["fragments"] = [info[i] for i in r["reconstruction"]]
+            out["order"] = [info[i] for i in r["show_order"]]
+        elif phase == "search":
+            out["candidates"] = [info[i] for i in r["show_order"]]
+        elif phase == "narrowing":
+            out["shortlist"] = [info[i] for i in r["shortlist"]]
+        elif phase in ("match", "result"):
+            out["winner"] = info[r["winner"]]
+            winner = next(x for x in r["ranking"] if x["id"] == r["winner"])
+            out["explanation"] = winner["explanation"]
+        if phase == "result":
+            # Public result leads with the approved match; saved model ranking stays untouched.
+            candidates = [winner] + [x for x in r["ranking"][:5] if x["id"] != r["winner"]]
+            out["top"] = [{**info[x["id"]], "position": x["position"], "rank": x["rank"], "tied": x["tied"]}
+                          for x in candidates]
+            out["gallery"] = [{**info[x["id"]], "position": x["position"]} for x in r["ranking"]]
+            out["method"] = {"algorithm_version": r["algorithm_version"], "canvas": [512, 640],
+                             "description": "AI-syntes av gruppens vanligaste drag. Originalen jämfördes med den godkända bilden före showen."}
+        return out
+    out["result_mode"] = "legacy"
     if phase == "composite":
         out["stages"] = [{"asset": s["asset"], "count": s["count"], "added": info[s["added"]]}
                          for s in r["composite_stages"]]

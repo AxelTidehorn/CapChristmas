@@ -1,5 +1,7 @@
 # MEDELTOMTEN — produktspecifikation och teknisk arkitektur
 
+> **Historisk V1-specifikation.** [Issue #3](https://github.com/AxelTidehorn/CapChristmas/issues/3) ersätter kraven på pixelmedel som publik referens och officiell matchningsgrund i V2. Implementerad V2-metod och drift: [V2.md](V2.md). V1 finns kvar som legacy.
+
 **Version:** 1.0, 23 november 2026  
 **Status:** Implementationsunderlag för en första fungerande version  
 **Mål:** En pålitlig, offlinekörbar webbapp för en julfest med cirka 40–75 deltagare.

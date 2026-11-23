@@ -28,6 +28,9 @@ def _progress(sid: str, **fields) -> None:
 def start(sid: str, start_show: bool) -> dict:
     with S.LOCK:
         m = S.load(sid)
+        from .ai_jobs import assert_idle
+        assert_idle(m)
+        m["result_mode"] = "legacy"
         if m["analysis"].get("status") in ("queued", "running"):
             raise S.ApiError(409, "En analys pågår redan.")
         pending = [d["id"] for d in m["drawings"].values() if d["status"] == "needs_review"]
@@ -162,6 +165,9 @@ def results_csv(results: dict) -> str:
 
 
 def load_results(sid: str) -> dict:
+    if S.load(sid).get("result_mode") == "ai":
+        from .ai_jobs import load_results as load_ai_results
+        return load_ai_results(sid)
     p = S.session_dir(sid) / "analysis" / "results.json"
     if not p.is_file():
         raise S.ApiError(404, "Ingen analys finns ännu.")

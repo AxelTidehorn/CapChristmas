@@ -1,5 +1,6 @@
 """MEDELTOMTEN – FastAPI app. Serves the API and the built frontend from one origin."""
 import io
+import json
 import zipfile
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,8 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from . import config as C
 from .imaging import template
 from .services import analysis_jobs as A
+from .services import ai_jobs as V
+from .ai.providers import ProviderError
 from .services import presentation as P
 from .services import sessions as S
 
@@ -17,6 +20,7 @@ from .services import sessions as S
 async def lifespan(_: FastAPI):
     C.DATA_DIR.mkdir(parents=True, exist_ok=True)
     A.recover_interrupted()
+    V.recover_interrupted()
     yield
 
 
@@ -28,9 +32,15 @@ def _api_error(_: Request, e: S.ApiError):
     return JSONResponse({"error": e.message}, status_code=e.status)
 
 
+@app.exception_handler(ProviderError)
+def _provider_error(_: Request, e: ProviderError):
+    return JSONResponse({"error": str(e)}, status_code=503)
+
+
 def _session_out(sid: str) -> dict:
     m = S.load(sid)
-    return {**m, "counts": S.counts(m), "analysis_stale": S.analysis_stale(m)}
+    return {**m, "counts": S.counts(m), "analysis_stale": S.analysis_stale(m),
+            "result_mode": m.get("result_mode", "legacy"), "ai": V.status(sid)}
 
 
 # --- API ---------------------------------------------------------------------------
@@ -124,9 +134,47 @@ def analysis(sid: str):
 def results(sid: str):
     """Organiser view: full ranking. The projector never calls this."""
     m = S.load(sid)
-    if m["analysis"].get("status") != "completed":
+    if m.get("result_mode") != "ai" and m["analysis"].get("status") != "completed":
         raise S.ApiError(404, "Ingen färdig analys.")
     return {**A.load_results(sid), "stale": S.analysis_stale(m)}
+
+
+# V2 preparation stays in the organiser API. The public presentation never calls a provider.
+@app.get("/api/ai/config")
+def ai_config(count: int = 75):
+    return V.config_status(max(2, min(C.MAX_DRAWINGS, count)))
+
+
+@app.post("/api/ai/check")
+def ai_check():
+    return V.check_config()
+
+
+@app.get("/api/sessions/{sid}/ai")
+def ai_status(sid: str):
+    return V.status(sid)
+
+
+@app.post("/api/sessions/{sid}/ai/{action}")
+def ai_action(sid: str, action: str, body: dict = Body(default={})):
+    if action == "approve-consensus":
+        return V.approve_consensus(sid, str(body.get("note") or ""))
+    if action == "approve-reference":
+        return V.approve_reference(sid, str(body.get("version") or ""))
+    if action == "approve-winner":
+        return V.approve_winner(sid, str(body.get("winner") or ""), str(body.get("note") or ""))
+    if action == "activate":
+        with S.LOCK:
+            m = S.load(sid)
+            V.assert_idle(m)
+            V.ready(m)
+            m["result_mode"] = "ai"
+            m["presentation"] = {"mode": "standby"}
+            S.save(m)
+        return V.status(sid)
+    if action == "cancel":
+        return V.cancel(sid)
+    return V.start(sid, action, str(body.get("note") or ""))
 
 
 @app.get("/api/sessions/{sid}/presentation")
@@ -147,6 +195,8 @@ def asset(sid: str, asset_id: str):
 @app.get("/api/sessions/{sid}/export/{name}")
 def export(sid: str, name: str):
     r = A.load_results(sid)
+    if r.get("mode") == "ai":
+        return export_ai(sid, name, r)
     base = S.session_dir(sid) / "analysis"
     if name == "results.json":
         return FileResponse(base / "results.json", filename=f"medeltomten_{sid}.json")
@@ -162,6 +212,34 @@ def export(sid: str, name: str):
                 z.write(p, f"normaliserade/plats_{row['position']:03d}_{row['id']}.png")
         return Response(buf.getvalue(), media_type="application/zip",
                         headers={"Content-Disposition": f'attachment; filename="medeltomten_{sid}.zip"'})
+    raise S.ApiError(404, "Okänd export.")
+
+
+def export_ai(sid: str, name: str, r: dict):
+    a = V.state(S.load(sid))
+    v = V.version(a, r["reference_id"])
+    reports = {"results.json": r, "consensus.json": a["consensus"], "provenance.json": v}
+    if name in reports:
+        return Response(json.dumps(reports[name], ensure_ascii=False, indent=2), media_type="application/json",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    if name == "results.csv":
+        return Response(V.results_csv(r), media_type="text/csv",
+                        headers={"Content-Disposition": 'attachment; filename="results.csv"'})
+    if name == "gallery.zip":
+        b = io.BytesIO()
+        with zipfile.ZipFile(b, "w", zipfile.ZIP_DEFLATED) as z:
+            for filename, report in reports.items():
+                z.writestr(filename, json.dumps(report, ensure_ascii=False, indent=2))
+            z.writestr("results.csv", V.results_csv(r))
+            z.write(S.asset_path(sid, v["asset"]), "reference.png")
+            z.write(S.asset_path(sid, r["legacy"]["raw_asset"]), "legacy/average_raw.png")
+            z.write(S.asset_path(sid, r["legacy"]["display_asset"]), "legacy/average_display.png")
+            for row in r["ranking"]:
+                z.write(S.asset_path(sid, f"{row['id']}-preview"), f"normaliserade/{row['id']}.png")
+                original = S.asset_path(sid, f"{row['id']}-original")
+                z.write(original, f"original/{row['id']}{original.suffix}")
+        return Response(b.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="medeltomten_v2_{sid}.zip"'})
     raise S.ApiError(404, "Okänd export.")
 
 

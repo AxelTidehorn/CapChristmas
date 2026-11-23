@@ -1,11 +1,18 @@
 # MEDELTOMTEN
 
-Lokal, offlinekörbar webbapp för julfesten: deltagarna ritar en *genomsnittstomte* på en utskriven A4-mall,
-arrangören fotograferar och laddar upp teckningarna, appen räknar ut en **verklig pixelmedelvärdesbild**,
-rangordnar bidragen deterministiskt efter avstånd till medelbilden och avslöjar vinnaren i en CSI-inspirerad
-projektorshow.
+Lokal webbapp för julfesten. **V2** analyserar alla inkluderade teckningar med multimodal AI, bygger en
+sammanhängande genomsnittstomte från gruppens konsensus och matchar originalen mot den godkända bilden.
+Arrangören granskar konsensus, bildversion och vinnare. Den färdiga CSI-showen fungerar helt offline.
 
-Specifikation: [`docs/PRODUKTSPEC.md`](docs/PRODUKTSPEC.md) och issue #1.
+**AI-förberedelsen kräver internet, en serverkonfigurerad API-nyckel och API-saldo.** Det separata
+**legacy-läget V1** behåller det helt lokala pixelmedelvärdet och den deterministiska pixelrankingen.
+
+Läs [V2: konfiguration, metod, API-källor och kostnader](docs/V2.md) samt
+[faktisk verifiering och kvarvarande begränsningar](docs/VERIFIERING-V2.md).
+V2 implementerar [issue #3](https://github.com/AxelTidehorn/CapChristmas/issues/3) och bygger på den faktiska
+V1-koden i [draft PR #2](https://github.com/AxelTidehorn/CapChristmas/pull/2). Den historiska
+[produktspecifikationen](docs/PRODUKTSPEC.md) nedan beskriver V1; issue #3 ersätter dess produktkrav på publik
+pixelmedelbild och offline-analys för V2.
 
 ## Snabbstart (Windows)
 
@@ -19,7 +26,9 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 
 Skapar `.venv`, installerar Python-paketen, kör `npm ci` och bygger frontend till `frontend/dist`.
 
-**2. Starta – fungerar utan internet:**
+**2. Konfigurera AI (för V2):** Kopiera `.env.example` till `.env`, fyll i `OPENAI_API_KEY` på servern och läs [V2-guiden](docs/V2.md). Hoppa över detta för legacy eller repris av en färdig show.
+
+**3. Starta – showen fungerar utan internet:**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\start.ps1
@@ -29,7 +38,7 @@ powershell -ExecutionPolicy Bypass -File scripts\start.ps1
 
 macOS/Linux: `scripts/install.sh` respektive `scripts/start.sh`.
 
-Inga runtime-beroenden på CDN, webbtypsnitt, externa API:er eller analytics – allt serveras från samma FastAPI-process.
+Inga CDN, externa typsnitt eller analytics. Bilder och frontend serveras från samma FastAPI-process. Endast V2-förberedelsen använder externa AI-API:er.
 
 ## Sidor
 
@@ -39,7 +48,15 @@ Inga runtime-beroenden på CDN, webbtypsnitt, externa API:er eller analytics –
 | `/show?session=<id>` | projektorn | publik 16:9-show utan adminknappar. `F` eller dubbelklick = helskärm |
 | `/print` | skrivaren | A4-ritmall med fyra ArUco-markörer |
 
-## Eventflöde
+## Eventflöde V2
+
+Importera → granska → analysera gruppen → granska/godkänn konsensus → generera → godkänn bildversion → matcha
+→ förhandsgranska/godkänn vinnare → starta show. Kostnadsuppskattning och leverantörsstatus visas i kontrollpanelen.
+Varje ny generering beställs uttryckligt. Bytt underlag eller godkänd referens kräver nya steg; gamla bilder sparas.
+Förbered i förväg med nätverk och repetera sedan med nätverket avstängt. Använd exporter för referens, rapporter,
+provenance och originalgalleri. Fullständig [event- och metodguide](docs/V2.md).
+
+## Eventflöde legacy V1
 
 1. **Förbered:** Skapa session i `/control` (*inte* demoläge). Skriv ut mallar från `/print` (A4, 100 %/faktisk storlek).
 2. **Projektor:** Klicka *Öppna projektorvy*, dra fönstret till projektorn, tryck `F`. Standby visar bara uppdraget.
@@ -70,7 +87,7 @@ aldrig ta emot syntetiska (servern avvisar båda). De syntetiska bilderna är re
 Projektorn visar `DEMO · SYNTETISKA TESTTECKNINGAR` under hela showen. Valfria problemfall: tomt ark och ark utan
 markörer.
 
-## Bildanalys (algoritm `medeltomten-v1.0`)
+## Legacy-bildanalys (algoritm `medeltomten-v1.0`)
 
 Alla parametrar finns i [`backend/app/config.py`](backend/app/config.py). Ändras något som påverkar resultatet ska
 `ALGORITHM_VERSION` höjas – och aldrig efter att en vinnare är känd.
@@ -96,7 +113,9 @@ råa distanser och σ-komponenter per bidrag, registreringsmetod, kvalitetsmått
 - Ingen OCR av namnraden – etikett skrivs in manuellt vid behov.
 - Inga UI-ljud implementerade (specen anger dem som valfria; inget spelas upp).
 
-## Showen
+## Legacy-showen V1
+
+V2 behåller faser/klocka men använder AI-rekonstruktion och godkänd referens i stället, se [V2](docs/V2.md).
 
 Faser och standardtider (`SHOW_PHASES` i config): `ANALYZING` (verklig tid) → `COMPOSITE BUILD` 7 s → `SUBJECT SEARCH` 16 s
 → `NARROWING` 5 s → `MATCH FOUND` 9 s (≈3 s låsning) → `RESULTAT` (står kvar).
@@ -124,6 +143,8 @@ backend/app/
     sessions.py             manifest (atomära skrivningar), import, granskning, assets
     analysis_jobs.py        bakgrundsjobb (en tråd): medel, scoring, export
     presentation.py         showstate + fasfiltrerad publik vy
+    ai_jobs.py              V2-jobb, checkpoint, godkännanden och exportdata
+  ai/{models,providers}.py  providerprotokoll, scheman, prompts och verkliga REST-adaptrar
 frontend/src/
   pages/{ControlPage,ShowPage,PrintPage}.tsx
   components/DrawingModal.tsx   original/normaliserad sida vid sida + hörneditor
@@ -156,7 +177,9 @@ cd frontend && npm run typecheck && npm run lint && npm run build
 Dev-läge med hot reload: backend `cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload` och
 `cd frontend && npm run dev` (Vite proxar `/api` till port 8000).
 
-Backendtesterna täcker exakt medelvärde på små matriser, lika score för identiska bilder och stabil tie-break,
+V2:s 21 ytterligare tester och det valfria webbläsartestet beskrivs i [verifieringsrapporten](docs/VERIFIERING-V2.md).
+
+V1-backendtesterna täcker exakt medelvärde på små matriser, lika score för identiska bilder och stabil tie-break,
 kontrollerade avvikare, att visningsförstärkningen inte används i scoring (omräkning mot sparad rå M ger identiska
 tal), ArUco-registrering mot roterade/perspektivförvrängda/sidledes foton, att malltext/ram/markörer inte läcker in,
 tomma/suddiga/beskurna/trasiga filer, manuella hörn → ny normalisering → inaktuell analys, uppladdningsvalidering

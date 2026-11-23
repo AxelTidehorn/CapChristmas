@@ -4,6 +4,7 @@ import {
   type Drawing, type PresentationView, type Results, type Session, type SessionSummary,
 } from '../api/client'
 import DrawingModal from '../components/DrawingModal'
+import AIWorkflow from '../components/AIWorkflow'
 import './control.css'
 
 const LAST = 'medeltomten.session'
@@ -38,7 +39,7 @@ export default function ControlPage() {
     refresh()
   }, [sid, refresh])
 
-  const running = session?.analysis.status === 'queued' || session?.analysis.status === 'running'
+  const running = session?.analysis.status === 'queued' || session?.analysis.status === 'running' || session?.ai.job.status === 'queued' || session?.ai.job.status === 'running'
   useEffect(() => {
     if (!sid) return
     const t = setInterval(refresh, running ? 600 : 2000)
@@ -120,11 +121,12 @@ function Workspace({ session, refresh, close }: { session: Session; refresh: () 
   const [results, setResults] = useState<Results | null>(null)
   const [pres, setPres] = useState<PresentationView | null>(null)
   const a = session.analysis
+  const [mode, setMode] = useState<'ai' | 'legacy'>(() => session.result_mode === 'legacy' && a.status === 'completed' ? 'legacy' : 'ai')
 
   useEffect(() => {
-    if (a.status === 'completed') api.results(sid).then(setResults).catch(() => setResults(null))
+    if (session.result_mode === 'ai' ? session.ai.ready : a.status === 'completed') api.results(sid).then(setResults).catch(() => setResults(null))
     else setResults(null)
-  }, [sid, a.status, a.finished_at, session.revision])
+  }, [sid, a.status, a.finished_at, session.revision, session.ai.ready, session.ai.match?.approval?.winner, session.result_mode])
 
   useEffect(() => {
     const tick = () => api.presentation(sid).then(setPres).catch(() => {})
@@ -158,24 +160,33 @@ function Workspace({ session, refresh, close }: { session: Session; refresh: () 
           <Uploader session={session} onDone={(m) => { setMsg(m); refresh() }} onError={setErr} />
 
           <section className="panel">
-            <h2>Analys</h2>
+            <h2>Förberedelse</h2>
+            <label>Metod
+              <select value={mode} onChange={(e) => setMode(e.target.value as 'ai' | 'legacy')}>
+                <option value="ai">V2 · AI-rekonstruerad tomte</option>
+                <option value="legacy">V1 · legacy pixelmedel (offline)</option>
+              </select>
+            </label>
+            {mode === 'ai' && <p className="muted">Följ AI-stegen till höger. Granska och godkänn allt innan showen startar. Showen kräver inga AI-anrop.</p>}
+            {mode === 'legacy' && <p className="warn">Legacy: matematiskt pixelmedel och pixelavstånd. Skapar ingen sammanhängande AI-tomte. Beräkning aktiverar legacy-resultatet.</p>}
             {session.counts.needs_review > 0 && (
               <p className="warn">{session.counts.needs_review} bidrag väntar på granskning. Godkänn, rätta eller uteslut dem innan analysen.</p>
             )}
             {session.analysis_stale && <p className="warn">Bidragen har ändrats efter senaste analysen – beräkna igen före showen.</p>}
-            <div className="col">
+            {mode === 'legacy' && <div className="col">
               <button className="primary big" disabled={a.status === 'running' || a.status === 'queued'}
                 onClick={() => run(() => api.analyze(sid, true), 'Analys startad – projektorn visar analysen.')}>
                 Beräkna och starta show
               </button>
               <button disabled={a.status === 'running' || a.status === 'queued'}
                 onClick={() => run(() => api.analyze(sid, false), 'Analys startad.')}>Beräkna endast</button>
-            </div>
-            <AnalysisStatus a={a} />
+            </div>}
+            {mode === 'legacy' && <AnalysisStatus a={a} />}
           </section>
 
           <section className="panel">
             <h2>Presentation</h2>
+            <p className="muted">Aktivt resultat: {session.result_mode === 'ai' ? 'AI-rekonstruktion V2' : 'Legacy pixelmedel V1'}</p>
             <p>
               <a href={projector} target="medeltomten-show"
                 onClick={(e) => { e.preventDefault(); window.open(projector, 'medeltomten-show', 'popup,width=1280,height=720') }}>
@@ -209,7 +220,8 @@ function Workspace({ session, refresh, close }: { session: Session; refresh: () 
         </aside>
 
         <div className="content">
-          {results && <ResultsPanel sid={sid} r={results} drawings={session.drawings} onOpen={setOpen} />}
+          {mode === 'ai' && <AIWorkflow session={session} refresh={refresh} />}
+          {results && results.mode !== 'ai' && <ResultsPanel sid={sid} r={results} drawings={session.drawings} onOpen={setOpen} />}
           <section className="panel">
             <div className="row spread">
               <h2>Bidrag</h2>
@@ -244,7 +256,7 @@ function AnalysisStatus({ a }: { a: Session['analysis'] }) {
   const pct = a.total ? Math.round(((a.done ?? 0) / a.total) * 100) : 0
   return (
     <div className="analysis">
-      <p>Status: <b>{{ queued: 'i kö', running: 'pågår', completed: 'klar', failed: 'misslyckades', none: '' }[a.status]}</b> · {a.step}</p>
+      <p>Status: <b>{{ queued: 'i kö', running: 'pågår', completed: 'klar', failed: 'misslyckades', cancelled: 'avbruten', none: '' }[a.status]}</b> · {a.step}</p>
       {(a.status === 'running' || a.status === 'queued') && <div className="bar"><div style={{ width: `${pct}%` }} /></div>}
       {a.error && <p className="error">{a.error}</p>}
     </div>
@@ -352,7 +364,7 @@ function ResultsPanel({ sid, r, drawings, onOpen }: {
   return (
     <section className="panel results">
       <div className="row spread">
-        <h2>Resultat {r.stale && <span className="badge needs_review">INAKTUELLT</span>} {r.demo && <span className="badge demo">DEMO</span>}</h2>
+        <h2>Legacy-resultat (pixelmedel) {r.stale && <span className="badge needs_review">INAKTUELLT</span>} {r.demo && <span className="badge demo">DEMO</span>}</h2>
         <div className="row">
           <a className="button" href={exportUrl(sid, 'results.csv')}>CSV</a>
           <a className="button" href={exportUrl(sid, 'results.json')}>JSON</a>
