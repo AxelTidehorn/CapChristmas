@@ -111,6 +111,18 @@ def counts(m: dict) -> dict:
 
 
 def analysis_stale(m: dict) -> bool:
+    if m.get("result_mode") == "ai":
+        from . import ai_jobs
+        a = m.get("ai", {})
+        # Missing approvals are unfinished work, not evidence that the input changed.
+        if not a.get("match", {}).get("approval"):
+            c = a.get("consensus")
+            return bool(c and c["fingerprint"] != ai_jobs.fingerprint(m))
+        try:
+            ai_jobs.ready(m)
+            return False
+        except ApiError:
+            return True
     a = m["analysis"]
     return a.get("status") == "completed" and a.get("revision") != m["revision"]
 
@@ -161,6 +173,8 @@ def _status_for(processed: dict) -> str:
 
 def add_drawing(sid: str, filename: str, data: bytes, synthetic: bool = False) -> dict:
     m = load(sid)
+    from .ai_jobs import assert_idle
+    assert_idle(m)
     if m["demo"] != synthetic:
         raise ApiError(409, "Demo- och tävlingsbidrag kan inte blandas i samma session.")
     if len(m["drawings"]) >= C.MAX_DRAWINGS:
@@ -204,6 +218,7 @@ def add_drawing(sid: str, filename: str, data: bytes, synthetic: bool = False) -
         m = load(sid)
         m["drawings"][did] = entry
         m["revision"] += 1
+        m["presentation"] = {"mode": "standby"}
         save(m)
     return entry
 
@@ -212,6 +227,8 @@ def update_drawing(sid: str, did: str, patch: dict) -> dict:
     ddir = drawing_dir(sid, did)
     with LOCK:
         m = load(sid)
+        from .ai_jobs import assert_idle
+        assert_idle(m)
         if did not in m["drawings"]:
             raise ApiError(404, "Okänt bidrag.")
         d = m["drawings"][did]
@@ -255,6 +272,7 @@ def update_drawing(sid: str, did: str, patch: dict) -> dict:
         m["drawings"][did] = d
         if changed:
             m["revision"] += 1
+            m["presentation"] = {"mode": "standby"}
         save(m)
     return d
 
@@ -271,6 +289,8 @@ def asset_path(sid: str, asset_id: str) -> Path:
         name = {"thumb": "thumb.jpg", "preview": "preview.png", "work": "work.jpg",
                 "original": f"original.{m['drawings'][did]['original_ext']}"}[kind]
         p = base / "drawings" / did / name
+    elif re.fullmatch(r"ai-[a-f0-9]{32}", asset_id or ""):
+        p = base / "ai" / f"{asset_id}.png"
     elif re.fullmatch(r"average_raw|average_display", asset_id or ""):
         p = base / "analysis" / f"{asset_id}.png"
     elif re.fullmatch(r"composite-\d{1,3}", asset_id or ""):

@@ -44,6 +44,8 @@ function useReducedMotion() {
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x))
 const tag = (w: Who) => w.id.toUpperCase()
+const reference = (v: PresentationView) => v.reference_asset ?? 'average_display'
+const ai = (v: PresentationView) => v.result_mode === 'ai'
 
 function preload(urls: string[]) {
   urls.forEach((u) => { const i = new Image(); i.src = u })
@@ -63,7 +65,7 @@ export function PhaseView({ v, receivedAt }: { v: PresentationView; receivedAt: 
   switch (v.phase) {
     case 'standby': return <Standby />
     case 'analyzing': return <Shell v={v} t={0}><Analyzing v={v} /></Shell>
-    case 'composite': return <Shell v={v} t={t}><Composite v={v} t={t} img={img} /></Shell>
+    case 'composite': return <Shell v={v} t={t}>{ai(v) ? <Reconstruction v={v} t={t} img={img} /> : <Composite v={v} t={t} img={img} />}</Shell>
     case 'search': return <Shell v={v} t={t}><Search v={v} t={t} img={img} /></Shell>
     case 'narrowing': return <Shell v={v} t={t}><Narrowing v={v} t={t} img={img} /></Shell>
     case 'match': return <Shell v={v} t={t}><Match v={v} t={t} img={img} /></Shell>
@@ -152,7 +154,7 @@ function Composite({ v, t, img }: { v: PresentationView; t: number; img: (a: str
             <img key={s.asset} src={img(s.asset)} alt="" style={{ opacity: final ? 0 : clamp(f - i, 0, 1) }} />
           ))}
           <img src={img('average_raw')} alt="" style={{ opacity: final && !showDisplay ? 1 : 0 }} />
-          <img src={img('average_display')} alt="" style={{ opacity: showDisplay ? 1 : 0 }} />
+          <img src={img(reference(v))} alt="" style={{ opacity: showDisplay ? 1 : 0 }} />
           <Brackets />
         </div>
       </Panel>
@@ -178,6 +180,32 @@ function Composite({ v, t, img }: { v: PresentationView; t: number; img: (a: str
   )
 }
 
+function Reconstruction({ v, t, img }: { v: PresentationView; t: number; img: (a: string) => string }) {
+  const reduced = useReducedMotion()
+  const fragments = v.fragments ?? []
+  const progress = clamp(t / Math.max(1, (v.phase_duration ?? 7) - 2), 0, 1)
+  const final = reduced || progress >= 1
+  return <div className="composite reconstruction">
+    <Panel title={final ? 'GRUPPENS FANTOMBILD · GODKÄND AI-REKONSTRUKTION' : 'VISUELL REKONSTRUKTION · DELTAGARNAS PENNSTRECK'} className="main-img">
+      <div className="frame">
+        {!reduced && fragments.map((w, i) => {
+          const enter = i / Math.max(1, fragments.length) * .65
+          const alpha = clamp((progress - enter) * 6, 0, 1) * (1 - clamp((progress - .72) / .28, 0, 1))
+          return <img key={w.id} src={img(`${w.id}-preview`)} alt="" style={{ opacity: alpha * .65,
+            mixBlendMode: 'multiply', transform: `translate(${(1 - progress) * ((i % 3) - 1) * 10}%, ${(1 - progress) * ((i % 2) ? 8 : -8)}%)` }} />
+        })}
+        <img src={img(reference(v))} alt="Gruppens sparade AI-genererade genomsnittstomte" style={{ opacity: reduced ? 1 : clamp((progress - .55) / .45, 0, 1) }} />
+        <Brackets />
+      </div>
+    </Panel>
+    <div className="side">
+      <Panel title="UNDERLAG"><p className="huge">{v.n}</p><p>VERKLIGA TECKNINGAR</p></Panel>
+      <Panel title="UR GRUPPENS ARKIV"><div className="fragment-grid">{fragments.map((w) => <img key={w.id} src={img(`${w.id}-preview`)} alt={tag(w)} />)}</div></Panel>
+      <Panel title="FANTOMBILD"><p className="formula">MÖSSA · ANSIKTE · SKÄGG</p><p className="dim">Gruppens vanligaste drag samlade i en figur.</p><p className="montage-note">Visuellt montage · analysen är förberedd</p></Panel>
+    </div>
+  </div>
+}
+
 function Search({ v, t, img }: { v: PresentationView; t: number; img: (a: string) => string }) {
   const reduced = useReducedMotion()
   const c = v.candidates ?? []
@@ -190,13 +218,13 @@ function Search({ v, t, img }: { v: PresentationView; t: number; img: (a: string
   return (
     <div className="search">
       <div className="search-top">
-        <Panel title="REFERENS · MEDELBILD" className="ref">
-          <div className="frame"><img src={img('average_display')} alt="" /><Brackets /></div>
+        <Panel title={ai(v) ? 'REFERENS · GRUPPENS FANTOMBILD' : 'REFERENS · LEGACY MEDELBILD'} className="ref">
+          <div className="frame"><img src={img(reference(v))} alt="" /><Brackets /></div>
         </Panel>
         <div className="vs">
           <p>JÄMFÖR</p>
           <div className="vs-bars">{[0, 1, 2].map((i) => <span key={i} style={{ width: `${30 + 70 * Math.abs(Math.sin(p * 2.3 + i))}%` }} />)}</div>
-          <p className="dim">σ 4 · 16 · 40 PX</p>
+          <p className="dim">{ai(v) ? 'FORM · PROPORTION · DRAG' : 'σ 4 · 16 · 40 PX'}</p>
         </div>
         <Panel title={`KANDIDAT ${cand ? tag(cand) : ''}`} className="cand">
           <div className="frame">
@@ -213,7 +241,7 @@ function Search({ v, t, img }: { v: PresentationView; t: number; img: (a: string
             <p className="subject">{cand ? tag(cand) : '—'}</p>
             <p className="dim">{cand?.label || 'ingen etikett'}</p>
           </Panel>
-          <Panel title="STATUS"><p className="ok">MÄTER AVSTÅND …</p></Panel>
+          <Panel title="STATUS"><p className="ok">SÖKER I ARKIVET …</p></Panel>
         </div>
       </div>
       <div className="strip">
@@ -246,7 +274,7 @@ function Narrowing({ v, t, img }: { v: PresentationView; t: number; img: (a: str
           </div>
         ))}
       </div>
-      <p className="dim center">KORSREFERERAR MOT MEDELBILD · SLUTLIG LÅSNING FÖRBEREDS</p>
+      <p className="dim center">KORSREFERERAR MOT REFERENS · SLUTLIG LÅSNING FÖRBEREDS</p>
     </div>
   )
 }
@@ -274,8 +302,8 @@ function Match({ v, t, img }: { v: PresentationView; t: number; img: (a: string)
       <h1 className="match-found">MATCH FOUND</h1>
       <div className="match-grid">
         <figure>
-          <div className="frame"><img src={img('average_display')} alt="" /><Brackets /></div>
-          <figcaption>MEDELBILD (VISNINGSFÖRSTÄRKT) · N={v.n}</figcaption>
+          <div className="frame"><img src={img(reference(v))} alt="" /><Brackets /></div>
+          <figcaption>{ai(v) ? 'GRUPPENS GENOMSNITTSTOMTE' : 'LEGACY MEDELBILD'} · N={v.n}</figcaption>
         </figure>
         <div className="match-eq">≈</div>
         <figure className="winner">
@@ -283,7 +311,8 @@ function Match({ v, t, img }: { v: PresentationView; t: number; img: (a: string)
           <figcaption>BIDRAG {tag(w)}</figcaption>
         </figure>
       </div>
-      <p className="verdict">MEST GENOMSNITTLIG</p>
+      <p className="verdict">{ai(v) ? 'MEST LIK GENOMSNITTSTOMTEN' : 'MEST GENOMSNITTLIG'}</p>
+      {ai(v) && <p className="match-reason">{v.explanation}</p>}
       <p className="who">{w.label || `Bidrag nr ${w.number}`}{v.winner_tied && ' · delad förstaplats, avgjord på bidrags-ID'}</p>
     </div>
   )
@@ -300,21 +329,21 @@ function Result({ v, img }: { v: PresentationView; img: (a: string) => string })
     <div className="result">
       <div className="result-main">
         <figure>
-          <div className="frame"><img src={img('average_display')} alt="" /></div>
+          <div className="frame"><img src={img(reference(v))} alt="" /></div>
           <figcaption>Medeltomten · N={v.n}</figcaption>
         </figure>
         <figure className="winner">
-          <div className="frame"><img src={img(`${top[0]?.id}-preview`)} alt="" /></div>
-          <figcaption>#1 {top[0] && name(top[0])}</figcaption>
+          <div className="frame"><img src={img(`${v.winner?.id ?? top[0]?.id}-preview`)} alt="" /></div>
+          <figcaption>VALD MATCH · {v.winner && name(v.winner)}</figcaption>
         </figure>
       </div>
-      <Panel title="TOPP 5 · MEST GENOMSNITTLIGA" className="top5">
+      <Panel title={ai(v) ? 'TOPPKANDIDATER · VISUELL LIKHET' : 'TOPP 5 · MEST GENOMSNITTLIGA'} className="top5">
         <ol>
           {top.map((w) => (
             <li key={w.id}>
               <img src={img(`${w.id}-preview`)} alt="" />
-              <span className="pos">#{w.position}</span>
-              <span>{name(w)}{w.tied && ' (delad)'}</span>
+              <span className="pos">{ai(v) ? w.id === v.winner?.id ? 'VALD' : '·' : `#${w.position}`}</span>
+              <span>{name(w)}{!ai(v) && w.tied && ' (delad)'}</span>
             </li>
           ))}
         </ol>
@@ -327,18 +356,18 @@ function Result({ v, img }: { v: PresentationView; img: (a: string) => string })
           </Panel>
         )}
         <Panel title="METOD" className="method">
-          <p>Varje foto rätas upp via markörerna och blir en bläckkarta 0–1 på {m?.canvas.join('×')} px. Medelbilden är
+          {ai(v) ? <><p>{m?.description}</p><p>{v.explanation}</p></> : <><p>Varje foto rätas upp via markörerna och blir en bläckkarta 0–1 på {m?.canvas.join('×')} px. Medelbilden är
             det verkliga pixelmedelvärdet av alla {v.n} godkända teckningar.</p>
-          <p>Avstånd D = {m?.weights.map((w, i) => `${w.toFixed(2)}·MSE(σ${m.sigmas_px[i]})`).join(' + ')} mellan
+          <p>Avstånd D = {m?.weights?.map((w, i) => `${w.toFixed(2)}·MSE(σ${m.sigmas_px?.[i]})`).join(' + ')} mellan
             suddade versioner av teckning och medelbild. Lägst D vinner. {v.excluded_count ? `${v.excluded_count} uteslutna. ` : ''}
-            {m?.algorithm_version}</p>
+            {m?.algorithm_version}</p></>}
         </Panel>
       </div>
       <div className="gallery" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
         {gallery.map((w) => (
-          <div key={w.id} className={w.position === 1 ? 'g1' : ''}>
+          <div key={w.id} className={w.id === v.winner?.id ? 'g1' : ''}>
             <img src={img(`${w.id}-preview`)} alt="" loading="lazy" />
-            <span>{w.position}</span>
+            <span>{ai(v) ? w.id.toUpperCase() : w.position}</span>
           </div>
         ))}
       </div>

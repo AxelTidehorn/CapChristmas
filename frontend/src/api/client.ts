@@ -17,7 +17,7 @@ export interface Drawing {
 }
 
 export interface Analysis {
-  status: 'none' | 'queued' | 'running' | 'completed' | 'failed'
+  status: 'none' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   step?: string
   done?: number
   total?: number
@@ -25,6 +25,42 @@ export interface Analysis {
   error?: string
   finished_at?: number
   stale?: boolean
+}
+
+export interface Consensus {
+  fingerprint: string
+  hash: string
+  visual_summary: string
+  uncertainty: string
+  dominant_composition: string
+  included_count: number
+  composition: Record<string, number>
+  features: { key: string; present_count: number; uncertain_count: number; level: string }[]
+  approval?: { correction: string }
+  observations: { id: string; composition: string; description: string }[]
+}
+export interface AIVersion {
+  id: string; asset: string; sha256: string; fingerprint: string; consensus_hash: string; created_at: number
+}
+export interface AIRow {
+  id: string; number: number; label: string; position: number; rank: number; score: number
+  explanation: string; reliable: boolean; tied: boolean
+}
+export interface AIState {
+  job: Analysis & { action?: string; id?: string }
+  versions: AIVersion[]
+  consensus?: Consensus
+  approved_reference?: string
+  reference_approved_at?: number
+  match?: { ranking: AIRow[]; reference_id: string; reference_hash: string; review_required: boolean; close_match: boolean
+    approval?: { winner: string; override: boolean; note: string } }
+  fingerprint: string
+  stale: boolean
+  ready: boolean
+}
+export interface AIConfig {
+  configured: boolean; error?: string; estimated_calls: number; estimate: string; generation_estimate: string; notice: string
+  config?: { vision_model: string; image_model: string; match_model: string; batch_size: number }
 }
 
 export interface Session {
@@ -35,6 +71,8 @@ export interface Session {
   revision: number
   drawings: Record<string, Drawing>
   analysis: Analysis
+  result_mode: 'legacy' | 'ai'
+  ai: AIState
   counts: { total: number; ok: number; needs_review: number; excluded: number }
   analysis_stale: boolean
 }
@@ -55,6 +93,7 @@ export interface RankRow {
 }
 
 export interface Results {
+  mode?: 'ai' | 'legacy'
   algorithm_version: string
   n_included: number
   winner: string
@@ -83,6 +122,10 @@ export interface PresentationView {
   n?: number
   n_uploaded?: number
   result_key?: string
+  result_mode?: 'ai' | 'legacy'
+  reference_asset?: string
+  fragments?: Who[]
+  explanation?: string
   analysis?: Analysis
   stages?: { asset: string; count: number; added: Who }[]
   order?: Who[]
@@ -94,7 +137,7 @@ export interface PresentationView {
   most_deviant?: Who & RankRow
   gallery?: (Who & RankRow)[]
   excluded_count?: number
-  method?: { algorithm_version: string; sigmas_px: number[]; weights: number[]; canvas: number[] }
+  method?: { algorithm_version: string; sigmas_px?: number[]; weights?: number[]; canvas: number[]; description?: string }
 }
 
 export class ApiError extends Error {
@@ -121,6 +164,9 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 const s = (id: string) => `/api/sessions/${encodeURIComponent(id)}`
 
 export const api = {
+  aiConfig: (count: number) => req<AIConfig>('GET', `/api/ai/config?count=${count}`),
+  aiCheck: () => req('POST', '/api/ai/check'),
+  aiAction: (id: string, action: string, body: Record<string, unknown> = {}) => req('POST', `${s(id)}/ai/${action}`, body),
   listSessions: () => req<SessionSummary[]>('GET', '/api/sessions'),
   createSession: (name: string, demo: boolean) => req<Session>('POST', '/api/sessions', { name, demo }),
   getSession: (id: string) => req<Session>('GET', s(id)),

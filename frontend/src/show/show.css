@@ -157,3 +157,18 @@ body.show-mode { margin: 0; background: #000; overflow: hidden; }
   .cursor { animation: none; }
   .frame img, .meter div, .short-item .frame { transition: none; }
 }
+
+.fragment-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5em; }
+.fragment-grid img { width: 100%; aspect-ratio: 512 / 640; object-fit: contain; background: white; }
+.montage-note { font-size: .8em; color: var(--g2); margin-top: 1em !important; }
+.reconstruction .frame { overflow: hidden; }
+.reconstruction .formula { font-size: 1.2em; }
+.match-grid { display: grid; grid-template-columns: minmax(0, 1fr) 3em minmax(0, 1fr); width: 72%; gap: 2em; height: 58%; }
+.match-grid figure { min-width: 0; }
+.match-grid .frame { width: 100%; aspect-ratio: auto; min-height: 0; }
+.match-eq { font-size: 4em; text-align: center; }
+.csi .verdict { font-size: 2.9em; }
+.match-reason { max-width: 78%; text-align: center; color: #b9dcd2; font-family: var(--sans); font-size: 1.15em; }
+@media (prefers-reduced-motion: reduce) {
+  .reconstruction img { transform: none !important; transition: none; }
+}
