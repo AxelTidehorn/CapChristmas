@@ -18,7 +18,8 @@ pixelmedelbild och offline-analys för V2.
 
 Ett **färdigbyggt paket** innehåller `frontend/dist`. Då behöver datorn bara Python 3.11+;
 installationsskripten installerar Python-paketen och hoppar över Node helt. Konfigurera `.env`
-och kör sedan det vanliga startskriptet. GitHubs vanliga **Download ZIP** innehåller enbart
+och kör sedan det vanliga startskriptet. Du kan också hoppa över `.env` och provköra gratis
+med Demoläge och metoden **V1 – legacy pixelmedel (offline)**; det gör inga AI-anrop. GitHubs vanliga **Download ZIP** innehåller enbart
 källkod och saknar dessa byggda filer.
 
 Paketet byggs på en utvecklingsdator med Node och Git:

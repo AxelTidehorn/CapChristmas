@@ -37,16 +37,23 @@ def main():
 
 Node.js behövs INTE på din dator. Python 3.11+ och internet för installation krävs.
 
+GRATIS TEST – ingen API-nyckel behövs:
 1. Packa upp hela ZIP-filen. Öppna mappen CapChristmas i PowerShell.
 2. Kör: powershell -ExecutionPolicy Bypass -File scripts\\install.ps1
-3. Skapa .env med: Copy-Item .env.example .env
-4. Öppna filen: notepad .env
-   Fyll i OPENAI_API_KEY=din-nyckel och spara. Dela inte nyckeln.
-5. Kör: powershell -ExecutionPolicy Bypass -File scripts\\start.ps1
-6. Öppna http://127.0.0.1:8000/control och låt PowerShell vara öppet.
+3. Kör: powershell -ExecutionPolicy Bypass -File scripts\\start.ps1
+4. Öppna http://127.0.0.1:8000/control och låt PowerShell vara öppet.
+5. Skapa en session med Demoläge. Generera 5 syntetiska testteckningar.
+6. Välj metoden V1 – legacy pixelmedel (offline). Granska flaggade bilder.
+7. Öppna projektorvyn och välj Beräkna och starta show.
+Detta testar appen och showen med den matematiska V1-metoden, inte AI-kvaliteten.
 
-Nästa gång behövs bara steg 5. Sessioner sparas i data/ i appmappen.
-AI-förberedelse kräver internet och API-saldo; färdig show spelas lokalt.
+VALFRITT TEST AV RIKTIG AI – kostar pengar via ditt API-konto:
+Skapa .env med: Copy-Item .env.example .env
+Öppna filen: notepad .env
+Fyll i OPENAI_API_KEY=din-nyckel och spara. Dela inte nyckeln.
+Starta om appen och välj V2. AI-förberedelse kräver internet och API-saldo.
+
+Nästa gång behövs bara startkommandot i steg 3. Sessioner sparas i data/ i appmappen.
 README.md och docs/V2.md beskriver appen. Windows och live-AI har ännu inte verifierats här.
 """)
     print(f"Created {output} ({output.stat().st_size} bytes)")
