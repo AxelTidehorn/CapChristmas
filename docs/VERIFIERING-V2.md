@@ -87,3 +87,15 @@ Testet använder en tillfällig datakatalog och ändrar inga riktiga sessioner. 
   Kör eventchecklistan på den riktiga eventdatorn, inklusive repris med nätverket avstängt.
 
 Konfiguration, prisantaganden, metod och versions-/invalideringsregler finns i [V2.md](V2.md).
+
+## Färdigbyggt paket utan Node på användardatorn (2026-11-24)
+
+`scripts/build-package.py` bygger frontend på byggdatorn och paketerar spårad källkod samt
+`frontend/dist`. Installationsskripten hoppar över npm när dessa assets finns och installerar
+enbart produktionsberoenden för Python. PowerShell-skriptet stoppar också vid misslyckade underkommandon.
+
+Faktiskt verifierat på Linux: nytt frontendbygge; ZIP med HTML/JS/CSS och instruktioner;
+uppackning i tillfällig katalog; start av den paketerade FastAPI-appen utan byggsteg;
+HTTP 200 för kontrollpanel, alla dess byggda JS/CSS-assets och health/session-API.
+ZIP kontrollerad för att inte innehålla `.env`, sessionsdata, `.venv` eller `node_modules`.
+`bash -n scripts/install.sh` passerar. Windows-installationsskriptet har inte körts i denna miljö.

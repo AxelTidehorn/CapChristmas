@@ -1,0 +1,56 @@
+"""Build a distributable with frontend assets. Node/Git are needed only on the build machine.
+
+Usage: python scripts/build-package.py /path/to/CapChristmas-Windows.zip
+The user installs Python dependencies with scripts/install.ps1; no Node on the user machine.
+"""
+from pathlib import Path
+import subprocess
+import sys
+import zipfile
+import os
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main():
+    if len(sys.argv) != 2:
+        raise SystemExit("Usage: python scripts/build-package.py OUTPUT.zip")
+    output = Path(sys.argv[1]).resolve()
+    npm = "npm.cmd" if os.name == "nt" else "npm"
+    subprocess.run([npm, "ci"], cwd=ROOT / "frontend", check=True)
+    subprocess.run([npm, "run", "build"], cwd=ROOT / "frontend", check=True)
+    tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
+    files = [ROOT / name for name in tracked if name]
+    files.extend(p for p in (ROOT / "frontend/dist").rglob("*") if p.is_file())
+    # Allowlisted tracked source + built assets only. Never package local sessions, keys or dependencies.
+    for path in files:
+        relative = path.relative_to(ROOT)
+        if any(part in ("data", ".venv", "node_modules", ".git") for part in relative.parts):
+            raise SystemExit(f"Refusing private/dependency path: {relative}")
+        if path.name.startswith(".env") and path.name != ".env.example":
+            raise SystemExit("Refusing environment file")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(set(files)):
+            archive.write(path, "CapChristmas/" + path.relative_to(ROOT).as_posix())
+        archive.writestr("CapChristmas/LAS-MIG.txt", """MEDELTOMTEN V2 – färdigbyggt paket
+
+Node.js behövs INTE på din dator. Python 3.11+ och internet för installation krävs.
+
+1. Packa upp hela ZIP-filen. Öppna mappen CapChristmas i PowerShell.
+2. Kör: powershell -ExecutionPolicy Bypass -File scripts\\install.ps1
+3. Skapa .env med: Copy-Item .env.example .env
+4. Öppna filen: notepad .env
+   Fyll i OPENAI_API_KEY=din-nyckel och spara. Dela inte nyckeln.
+5. Kör: powershell -ExecutionPolicy Bypass -File scripts\\start.ps1
+6. Öppna http://127.0.0.1:8000/control och låt PowerShell vara öppet.
+
+Nästa gång behövs bara steg 5. Sessioner sparas i data/ i appmappen.
+AI-förberedelse kräver internet och API-saldo; färdig show spelas lokalt.
+README.md och docs/V2.md beskriver appen. Windows och live-AI har ännu inte verifierats här.
+""")
+    print(f"Created {output} ({output.stat().st_size} bytes)")
+
+
+if __name__ == "__main__":
+    main()

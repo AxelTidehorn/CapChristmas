@@ -14,6 +14,22 @@ V1-koden i [draft PR #2](https://github.com/AxelTidehorn/CapChristmas/pull/2). D
 [produktspecifikationen](docs/PRODUKTSPEC.md) nedan beskriver V1; issue #3 ersätter dess produktkrav på publik
 pixelmedelbild och offline-analys för V2.
 
+## Installation utan Node.js på eventdatorn
+
+Ett **färdigbyggt paket** innehåller `frontend/dist`. Då behöver datorn bara Python 3.11+;
+installationsskripten installerar Python-paketen och hoppar över Node helt. Konfigurera `.env`
+och kör sedan det vanliga startskriptet. GitHubs vanliga **Download ZIP** innehåller enbart
+källkod och saknar dessa byggda filer.
+
+Paketet byggs på en utvecklingsdator med Node och Git:
+
+```bash
+python scripts/build-package.py /tmp/CapChristmas-Windows.zip
+```
+
+Packa upp hela paketet före installation. Läs `LAS-MIG.txt` i paketet. Utvecklare som behöver
+pytest installerar separat `backend/requirements-dev.txt`; vanligt appbruk kräver inte testverktygen.
+
 ## Snabbstart (Windows)
 
 Kräver Python 3.11+ (python.org, med `py`-launchern) och Node.js 20+.
